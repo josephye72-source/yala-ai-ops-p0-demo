@@ -1,0 +1,311 @@
+{
+  "name": "Voice AI Vapi Calendar CRM Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-tool-call",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7a2ff0b1-7859-45c7-a0c0-c3e195120001",
+      "name": "Webhook - Vapi Tool Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        -220
+      ],
+      "notes": "Point Vapi custom tools at this webhook. The workflow normalizes tool calls and forwards them to a calendar/CRM tool endpoint."
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst message = body.message || body;\nconst toolCall = message.toolCall || body.toolCall || body.tool_call || {};\nconst fn = toolCall.function || toolCall;\nlet args = fn.arguments || toolCall.arguments || body.arguments || {};\nif (typeof args === 'string') {\n  try {\n    args = JSON.parse(args);\n  } catch (error) {\n    args = { raw: args };\n  }\n}\nconst rawToolName = fn.name || toolCall.name || body.tool_name || args.tool_name || 'unknown_tool';\nconst allowedTools = ['check_availability', 'create_booking', 'upsert_contact', 'cancel_booking', 'transfer_call'];\nconst toolName = allowedTools.includes(rawToolName) ? rawToolName : 'unknown_tool';\nconst call = message.call || body.call || {};\nconst baseUrl = process.env.VOICE_TOOL_BASE_URL || 'https://example.com/voice-tools';\nreturn [{\n  json: {\n    call_id: call.id || body.call_id || body.callId || 'unknown_call',\n    tool_call_id: toolCall.id || body.tool_call_id || null,\n    tool_name: toolName,\n    original_tool_name: rawToolName,\n    args,\n    target_url: `${baseUrl}/${toolName}`,\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "119b6c4b-10fd-4f63-9f88-877a785b0002",
+      "name": "Normalize Tool Call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -220
+      ],
+      "notes": "Restricts tool names to an allowlist so the voice agent cannot call arbitrary backend paths."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.target_url}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"call_id\": $json.call_id, \"tool_call_id\": $json.tool_call_id, \"tool_name\": $json.tool_name, \"args\": $json.args, \"received_at\": $json.received_at}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "fbf3b2d8-0708-4fe5-8eb2-dc7a44b30003",
+      "name": "Call Calendar or CRM Tool",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        -220
+      ],
+      "notes": "Use HTTP Header Auth for your internal tool gateway. The gateway can wrap Google Calendar, HubSpot, Airtable, Supabase, or GoHighLevel."
+    },
+    {
+      "parameters": {
+        "jsCode": "const tool = $('Normalize Tool Call').item.json;\nconst result = $json;\nreturn [{\n  json: {\n    ok: true,\n    call_id: tool.call_id,\n    tool_name: tool.tool_name,\n    results: [\n      {\n        toolCallId: tool.tool_call_id,\n        result: result.result || result.message || result\n      }\n    ]\n  }\n}];"
+      },
+      "id": "52aa0bbf-b24a-44d7-bd3a-2984ff940004",
+      "name": "Format Vapi Tool Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        -220
+      ],
+      "notes": "Formats the backend response in the shape Vapi expects for tool-call results."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": $json.ok, \"call_id\": $json.call_id, \"tool_name\": $json.tool_name, \"results\": $json.results}"
+      },
+      "id": "abfbd694-417a-46dd-81b4-498218830005",
+      "name": "Respond - Tool Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        60,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-call-ended",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7f98b45a-35d2-4db4-9932-d445ba2e0006",
+      "name": "Webhook - Vapi Call Ended",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -980,
+        180
+      ],
+      "notes": "Use this webhook for end-of-call events so transcripts and outcomes become CRM records."
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst message = body.message || body;\nconst call = message.call || body.call || {};\nreturn [{\n  json: {\n    call_id: call.id || body.call_id || body.callId || 'unknown_call',\n    customer_phone: call.customer?.number || body.customer_phone || body.phone || '',\n    assistant_id: call.assistantId || body.assistant_id || '',\n    transcript: message.transcript || body.transcript || '',\n    recording_url: message.recordingUrl || body.recording_url || '',\n    ended_reason: message.endedReason || body.ended_reason || '',\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "748f4cb8-42ed-42a4-8f7a-7f1060aa0007",
+      "name": "Normalize Call End",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VOICE_SUMMARY_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"call_id\": $json.call_id, \"transcript\": $json.transcript, \"customer_phone\": $json.customer_phone, \"ended_reason\": $json.ended_reason}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "38588a55-f32f-4a36-aa98-922262b30008",
+      "name": "Summarize Call - LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        180
+      ],
+      "notes": "This can point to an OpenAI/Claude proxy or your own FastAPI summarizer. Return structured JSON: summary, lead_status, next_action, fields_to_update."
+    },
+    {
+      "parameters": {
+        "jsCode": "const call = $('Normalize Call End').item.json;\nconst rawSummary = $json.summary || $json.result || $json.output || $json;\nconst summary = typeof rawSummary === 'string' ? { summary: rawSummary } : rawSummary;\nreturn [{\n  json: {\n    call_id: call.call_id,\n    customer_phone: call.customer_phone,\n    assistant_id: call.assistant_id,\n    transcript: call.transcript,\n    recording_url: call.recording_url,\n    ended_reason: call.ended_reason,\n    summary: summary.summary || summary.text || '',\n    lead_status: summary.lead_status || 'needs_review',\n    next_action: summary.next_action || 'Review transcript before follow-up.',\n    fields_to_update: summary.fields_to_update || {},\n    received_at: call.received_at\n  }\n}];"
+      },
+      "id": "a1731c52-10d6-42d7-8a10-b60d101b0009",
+      "name": "Prepare CRM Call Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.VOICE_CRM_LOG_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "6fd2c581-d81e-4c0a-93c3-5ff3ab550010",
+      "name": "Upsert CRM Call Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        60,
+        180
+      ],
+      "notes": "Point this to Airtable, Supabase, HubSpot, GoHighLevel, or an internal API."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"call_id\": $('Prepare CRM Call Log').item.json.call_id, \"lead_status\": $('Prepare CRM Call Log').item.json.lead_status, \"next_action\": $('Prepare CRM Call Log').item.json.next_action}"
+      },
+      "id": "3998db31-6679-4a41-b997-9ab580f00011",
+      "name": "Respond - Call Logged",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        180
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Vapi Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Normalize Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Call Calendar or CRM Tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Calendar or CRM Tool": {
+      "main": [
+        [
+          {
+            "node": "Format Vapi Tool Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Vapi Tool Response": {
+      "main": [
+        [
+          {
+            "node": "Respond - Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Vapi Call Ended": {
+      "main": [
+        [
+          {
+            "node": "Normalize Call End",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Call End": {
+      "main": [
+        [
+          {
+            "node": "Summarize Call - LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Call - LLM": {
+      "main": [
+        [
+          {
+            "node": "Prepare CRM Call Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare CRM Call Log": {
+      "main": [
+        [
+          {
+            "node": "Upsert CRM Call Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert CRM Call Log": {
+      "main": [
+        [
+          {
+            "node": "Respond - Call Logged",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "voice-ai"
+    },
+    {
+      "name": "vapi"
+    },
+    {
+      "name": "calendar-crm"
+    },
+    {
+      "name": "ai-workflow"
+    }
+  ]
+}

@@ -66,6 +66,24 @@ It mirrors the FastAPI adapter as a visual workflow:
 
 See `docs/n8n-workflow.md` for the import notes, required credentials, and production hardening checklist.
 
+## Voice AI Workflow Template
+
+A second importable n8n workflow is included for Voice AI / Vapi-style agency builds:
+
+```text
+n8n/voice-ai-vapi-calendar-crm-workflow.json
+```
+
+It demonstrates:
+
+`Vapi tool call -> tool allowlist -> calendar/CRM gateway -> Vapi tool result`
+
+and:
+
+`Vapi call ended -> transcript summary -> CRM call log -> next action`
+
+See `docs/voice-ai-workflow.md` for sample payloads and a paid-pilot scope.
+
 ## Suggested P0 Acceptance
 
 - A Lark Bot can receive a test message.
