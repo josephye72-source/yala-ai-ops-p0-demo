@@ -84,6 +84,16 @@ and:
 
 See `docs/voice-ai-workflow.md` for sample payloads and a paid-pilot scope.
 
+## Servicing Copilot Bake-Off Starter
+
+A mortgage-servicing copilot slice is included at:
+
+```text
+examples/servicing_copilot_bakeoff
+```
+
+It demonstrates lender-scoped loan tape import, idempotent upsert, append-only case events, and borrower email classification into structured output. This is designed as a compact proof for paid bake-off conversations that need Postgres-style schema judgment plus LLM workflow reliability.
+
 ## Suggested P0 Acceptance
 
 - A Lark Bot can receive a test message.
