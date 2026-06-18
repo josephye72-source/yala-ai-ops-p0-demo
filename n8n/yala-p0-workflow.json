@@ -1,0 +1,216 @@
+{
+  "name": "YALA P0 AI Review Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yala-p0-question",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "6f1e5a5f-2ef1-43e1-b909-faaebf271001",
+      "name": "Webhook - Internal Question",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn [{\n  json: {\n    question: body.question || body.text || '',\n    requester: body.requester || 'lark-bot',\n    scenario: body.scenario || 'lead_qualification',\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "bdbf05de-b54c-4c08-85db-4b738b274002",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.RAGFLOW_RETRIEVAL_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"query\": $json.question, \"top_k\": 5, \"scenario\": $json.scenario}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "8d4f3e71-9ea7-41c4-82cc-192f39299003",
+      "name": "Retrieve Cases - RAGFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -420,
+        0
+      ],
+      "notes": "Use an HTTP Header Auth credential with Authorization: Bearer <RAGFLOW_API_KEY>."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DIFY_WORKFLOW_URL}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"inputs\":{\"question\": $('Normalize Payload').item.json.question, \"retrieved_cases\": $json.results || $json.data || $json}, \"response_mode\":\"blocking\", \"user\": $('Normalize Payload').item.json.requester}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b6852efa-4f15-446d-b065-7fc8fa9e9004",
+      "name": "Generate Draft - Dify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        0
+      ],
+      "notes": "Use an HTTP Header Auth credential with Authorization: Bearer <DIFY_API_KEY>."
+    },
+    {
+      "parameters": {
+        "jsCode": "const normalized = $('Normalize Payload').item.json;\nconst rag = $('Retrieve Cases - RAGFlow').item.json;\nconst dify = $json;\nconst outputs = dify.data?.outputs || dify.outputs || dify;\nreturn [{\n  json: {\n    question: normalized.question,\n    requester: normalized.requester,\n    scenario: normalized.scenario,\n    answer: outputs.answer || outputs.text || outputs.result || '',\n    citations: outputs.citations || outputs.sources || [],\n    next_action: outputs.next_action || 'Human review required before acting.',\n    retrieved_raw: rag,\n    review_status: 'pending_human_review',\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "bd20f8a8-7284-4262-b192-5eb8a6cad005",
+      "name": "Prepare Review Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{$env.LARK_BASE_APP_TOKEN}}/tables/{{$env.LARK_BASE_TABLE_ID}}/records",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"Question\": $json.question, \"Draft Answer\": $json.answer, \"Citations\": JSON.stringify($json.citations), \"Next Action\": $json.next_action, \"Review Status\": $json.review_status, \"Created At\": $json.created_at}}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "5a29fef0-d948-4b45-bf7a-23e26027e006",
+      "name": "Write Call Log - Lark Base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "notes": "Use an HTTP Header Auth credential with Authorization: Bearer <LARK_TENANT_ACCESS_TOKEN>. In production, refresh this token in a separate credential workflow."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"review_status\": $('Prepare Review Record').item.json.review_status, \"answer\": $('Prepare Review Record').item.json.answer, \"next_action\": $('Prepare Review Record').item.json.next_action}"
+      },
+      "id": "97c6e0c7-f88f-4857-b2b9-a07db24cd007",
+      "name": "Respond - Review Draft",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        540,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Internal Question": {
+      "main": [
+        [
+          {
+            "node": "Normalize Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Payload": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Cases - RAGFlow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Cases - RAGFlow": {
+      "main": [
+        [
+          {
+            "node": "Generate Draft - Dify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Draft - Dify": {
+      "main": [
+        [
+          {
+            "node": "Prepare Review Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Review Record": {
+      "main": [
+        [
+          {
+            "node": "Write Call Log - Lark Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Call Log - Lark Base": {
+      "main": [
+        [
+          {
+            "node": "Respond - Review Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ai-workflow"
+    },
+    {
+      "name": "human-review"
+    },
+    {
+      "name": "rag"
+    }
+  ]
+}
+

@@ -52,6 +52,20 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8787/lark/events `
 - `DIFY_API_KEY`, `DIFY_WORKFLOW_URL`: Dify workflow endpoint.
 - `RAGFLOW_API_KEY`, `RAGFLOW_RETRIEVAL_URL`: RAGFlow retrieval endpoint.
 
+## n8n Workflow Template
+
+An importable n8n workflow skeleton is included at:
+
+```text
+n8n/yala-p0-workflow.json
+```
+
+It mirrors the FastAPI adapter as a visual workflow:
+
+`webhook -> normalize -> RAGFlow retrieval -> Dify draft -> Lark Base call log -> review response`
+
+See `docs/n8n-workflow.md` for the import notes, required credentials, and production hardening checklist.
+
 ## Suggested P0 Acceptance
 
 - A Lark Bot can receive a test message.
@@ -60,4 +74,3 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8787/lark/events `
 - Lark Base receives one log row per call.
 - The response card shows draft answer, cited source ids, and review status.
 - Secrets are not committed; deployment uses environment variables.
-
